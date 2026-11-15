@@ -1,0 +1,7 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecretVersionStage"], "Resource": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:sentinelx/*"},
+    {"Effect": "Allow", "Action": ["kms:Decrypt", "kms:GenerateDataKey"], "Resource": "arn:aws:kms:REGION:ACCOUNT:key/KEY-ID", "Condition": {"StringEquals": {"kms:ViaService": "secretsmanager.REGION.amazonaws.com"}}}
+  ]
+}

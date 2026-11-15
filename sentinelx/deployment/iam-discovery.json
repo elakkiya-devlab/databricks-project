@@ -1,0 +1,7 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": "secretsmanager:ListSecrets", "Resource": "*"},
+    {"Effect": "Allow", "Action": "secretsmanager:DescribeSecret", "Resource": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:sentinelx/*"}
+  ]
+}

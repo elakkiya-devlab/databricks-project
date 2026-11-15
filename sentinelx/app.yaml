@@ -1,0 +1,11 @@
+command:
+  - streamlit
+  - run
+  - dashboard/app.py
+  - --server.address
+  - 0.0.0.0
+env:
+  - name: SENTINELX_API_URL
+    value: 'https://your-private-governance-api.example.com'
+  - name: SENTINELX_READER_KEY
+    valueFrom: sentinelx-reader-key

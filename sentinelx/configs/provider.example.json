@@ -1,0 +1,47 @@
+{
+  "discovery": {
+    "host": "https://your-workspace.cloud.databricks.com",
+    "client_id": "discovery-service-principal-application-uuid",
+    "client_secret": "SET_IN_ENCRYPTED_CONFIG_ONLY"
+  },
+  "executor": {
+    "host": "https://your-workspace.cloud.databricks.com",
+    "client_id": "executor-service-principal-application-uuid",
+    "client_secret": "SET_IN_ENCRYPTED_CONFIG_ONLY"
+  },
+  "account_host": "https://accounts.cloud.databricks.com",
+  "account_id": "your-account-id",
+  "aws_region": "us-east-1",
+  "aws_profile": null,
+  "aws_executor_profile": null,
+  "bindings": {
+    "service-principal-numeric-id": {
+      "aws_secret_id": "arn:aws:secretsmanager:us-east-1:123456789012:secret:sentinelx/pipeline-ABC123",
+      "client_id": "workload-service-principal-application-uuid",
+      "scope": "production",
+      "key": "pipeline-oauth",
+      "lifetime_days": 90,
+      "scopes": ["all-apis"],
+      "rollback_contract_verified_by_owner": false
+    }
+  },
+  "metadata_overrides": {
+    "db:sp:service-principal-numeric-id": {"owner": "Data Platform", "privileged": false},
+    "db:sp-secret:service-principal-numeric-id:secret-id": {"owner": "Data Platform"}
+  },
+  "registry_assets": [
+    {
+      "id": "registry:oauth:example",
+      "name": "Example integration OAuth credential",
+      "kind": "oauth",
+      "source": "databricks",
+      "owner": "Data Platform",
+      "application": "Example integration",
+      "created_at": "2026-11-01T00:00:00Z",
+      "expires_at": "2026-12-01T00:00:00Z",
+      "last_rotated_at": "2026-11-01T00:00:00Z",
+      "active": true,
+      "privileged": false
+    }
+  ]
+}

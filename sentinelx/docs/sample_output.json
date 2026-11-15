@@ -1,0 +1,75 @@
+{
+  "simulated": true,
+  "before": {
+    "total": 64,
+    "score": 60.2,
+    "compliance_percentage": 25.0,
+    "high_risk": 45,
+    "open_actions": 0,
+    "findings": 132,
+    "at": "2026-11-12T17:19:47.615521+00:00",
+    "coverage": {
+      "mode": "demo",
+      "complete": true,
+      "errors": []
+    },
+    "policy": {
+      "max_age_days": 30,
+      "rotation_days": 30,
+      "inactivity_days": 30
+    }
+  },
+  "after": {
+    "total": 64,
+    "score": 61.2,
+    "compliance_percentage": 26.6,
+    "high_risk": 44,
+    "open_actions": 0,
+    "findings": 131
+  },
+  "findings_removed": 1,
+  "audit_integrity": true,
+  "action": {
+    "id": "aecfd6a5-36b6-426a-9ca4-b74d4822a51d",
+    "asset_id": "db:sp-secret:6",
+    "action": "renew_sp",
+    "requester": "demo-operator",
+    "approver": "demo-approver",
+    "owner": null,
+    "original_id": null,
+    "status": "succeeded",
+    "created_at": "2026-11-12T17:19:47.632748+00:00",
+    "before": {
+      "id": "db:sp-secret:6",
+      "name": "pipeline-06/oauth-secret",
+      "kind": "sp_secret",
+      "source": "databricks",
+      "owner": "ML Engineering",
+      "application": "pipeline-06",
+      "created_at": "2026-11-07T00:00:00+00:00",
+      "expires_at": "2026-11-09T00:00:00+00:00",
+      "last_used_at": null,
+      "last_rotated_at": "2026-11-07T00:00:00+00:00",
+      "active": true,
+      "privileged": false,
+      "rotation_enabled": null,
+      "binding": "pipeline-06",
+      "sync_state": "metadata_aligned",
+      "rotation_supported": true,
+      "provider_id": "secret-6",
+      "parent_id": "db:sp:6"
+    },
+    "fingerprint": "04dfcb87037e617bdb264863da19629a9cc6af7714796374e7b298a8b5d2bc7e",
+    "reviewed": true,
+    "receipt": null,
+    "mode": "demo",
+    "plan": {
+      "mode": "demo",
+      "action": "renew_sp",
+      "target": "db:sp-secret:6",
+      "provider_writes": false,
+      "rollback": "Restore prior metadata or AWS version; retain old OAuth secret"
+    },
+    "approved_at": "2026-11-12T17:19:47.655975+00:00"
+  }
+}
