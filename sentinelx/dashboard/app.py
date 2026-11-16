@@ -1,15 +1,31 @@
+import logging
 import os
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
-import altair as alt
-import httpx
-import pandas as pd
-import streamlit as st
+# Databricks Apps and `streamlit run` only put this directory on sys.path; the backend packages live one level up.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import altair as alt  # noqa: E402
+import httpx  # noqa: E402
+import pandas as pd  # noqa: E402
+import streamlit as st  # noqa: E402
+
+from aws_page import aws_connection_page, aws_status  # noqa: E402
+from backend.copilot.model_serving import ModelServingIntentProvider  # noqa: E402
+from backend.demo.copilot import DemoCopilot  # noqa: E402
+from backend.demo.engine import DEMO_BADGE, DemoWorkspace  # noqa: E402
+from configs.settings import resolve_app_mode  # noqa: E402
+from demo_pages import render as render_demo_page  # noqa: E402
+from shared import PAGES  # noqa: E402
 
 st.set_page_config(page_title="SentinelX | Identity Governance", page_icon=":material/shield:", layout="wide")
+LOG = logging.getLogger("sentinelx.dashboard")
+APP_MODE = resolve_app_mode()
 API = os.getenv("SENTINELX_API_URL", "http://127.0.0.1:8000")
 COLORS = {"compliant": "#23845c", "attention": "#c89916", "high": "#e87932", "critical": "#ce424b"}
 LABELS = {"service_principal": "Service principals", "sp_secret": "SP secrets", "pat": "PATs", "oauth": "OAuth",
@@ -30,7 +46,16 @@ h3 { font-size: 1.1rem !important; letter-spacing: 0 !important; }
 .brandmark { color: #167a72; font-family: 'IBM Plex Mono', monospace; font-size: .78rem; font-weight: 500; }
 [data-testid="stDataFrame"] { border: 1px solid var(--line); border-radius: 4px; }
 [data-testid="stHeader"] { background: transparent; }
+.statusrow { display: flex; justify-content: space-between; font-size: .82rem; padding: 2px 0; color: #4a5256; }
+.statusrow b.ok { color: #23845c; } .statusrow b.off { color: #8a6d12; }
+@media (max-width: 900px) { .block-container { padding: 1rem .75rem; } h1 { font-size: 1.6rem !important; } }
 </style>""", unsafe_allow_html=True)
+
+
+def api_configured():
+    url = os.getenv("SENTINELX_API_URL", "")
+    host = urlparse(url).hostname or ""
+    return bool(host) and not host.endswith("example.com")
 
 
 def api(path, method="GET", role="reader", payload=None, raw=False):
@@ -41,15 +66,41 @@ def api(path, method="GET", role="reader", payload=None, raw=False):
             st.error(response.json().get("detail", "API operation failed"))
             return None
         return response.text if raw else response.json()
-    except (httpx.HTTPError, ValueError):
-        st.error("Governance API unavailable")
+    except (httpx.HTTPError, ValueError) as error:
+        LOG.warning("Governance API request %s %s failed: %s", method, path, type(error).__name__)
         return None
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def probe_backend(url):
+    """Short, cached connectivity probe; a failure is logged once per cache window rather than on every rerun."""
+    if not url:
+        return "Not configured"
+    try:
+        response = httpx.request("GET", url + "/health", headers={"X-API-Key": os.getenv("SENTINELX_READER_KEY", "")}, timeout=2)
+        return "Connected" if response.status_code == 200 else "Disconnected"
+    except (httpx.HTTPError, ValueError) as error:
+        LOG.warning("Governance backend %s unreachable: %s", urlparse(url).hostname, type(error).__name__)
+        return "Disconnected"
+
+
+def live_unavailable():
+    st.error("Governance API unavailable")
+    if not api_configured():
+        st.caption("SENTINELX_API_URL is not set to a real governance API. Host the FastAPI service separately and set "
+                   "SENTINELX_API_URL and SENTINELX_READER_KEY, or set DEMO_MODE=true to use synthetic data.")
+    elif not os.getenv("SENTINELX_READER_KEY"):
+        st.caption("SENTINELX_READER_KEY is not set, so the API will reject requests.")
+    else:
+        st.caption(f"The governance API at {urlparse(API).hostname} did not respond. Check its health and network access.")
 
 
 def command(path, role="operator", payload=None):
     if api(path, "POST", role, payload) is not None:
         st.toast("Governance action recorded", icon=":material/check_circle:")
         st.rerun()
+    else:
+        st.error("The governance API did not accept or complete this request.")
 
 
 def metrics(items, labels):
@@ -422,25 +473,51 @@ def compliance_reports(summary):
         st.dataframe(pd.DataFrame(history[::-1]), hide_index=True, width="stretch")
 
 
+def sidebar_status():
+    backend = probe_backend(API if api_configured() else "")
+    aws, _ = aws_status()
+    mode = DEMO_BADGE if APP_MODE.demo else "Live Mode"
+    rows = [("Mode", mode), ("Backend", backend), ("AWS", aws)]
+    st.markdown("".join(
+        f'<div class="statusrow"><span>{label}</span><b class="{"ok" if value in {"Connected", "Live Mode"} else "off"}">{value}</b></div>'
+        for label, value in rows), unsafe_allow_html=True)
+    if APP_MODE.warning:
+        st.caption(APP_MODE.warning)
+
+
 with st.sidebar:
     logo = Path(__file__).parent / "assets" / "sentinelx.png"
     if logo.exists():
         st.image(str(logo), width=44)
     st.markdown("## SentinelX")
     st.caption("IDENTITY SECURITY OPERATIONS")
-    view = st.radio("Workspace", ["Executive Summary", "Credential Governance", "Service Principals", "Secret Governance",
-                                  "AWS Integration", "Compliance Reports", "SentinelX AI Copilot",
-                                  "Remediation & Action Center", "Audit & Governance"],
-                    label_visibility="collapsed", key="workspace_view")
+    view = st.radio("Workspace", PAGES, label_visibility="collapsed", key="workspace_view")
+    st.divider()
+    st.caption("SYSTEM STATUS")
+    sidebar_status()
     st.divider()
     st.caption("POLICY BASELINE")
     st.caption("Databricks + AWS Secrets Manager")
 
 
+def render_demo():
+    if "demo_ws" not in st.session_state:
+        st.session_state["demo_ws"] = DemoWorkspace()
+    workspace = st.session_state["demo_ws"]
+    heading, badge = st.columns([4, 2])
+    heading.markdown('<span class="brandmark">SENTINELX / GOVERNANCE CONTROL CENTER</span>', unsafe_allow_html=True)
+    badge.caption(f"● {DEMO_BADGE}")
+    st.title(view)
+    st.caption("Discover. Assess. Govern. Rotate. Remediate.")
+    render_demo_page(view, workspace, DemoCopilot(workspace, ModelServingIntentProvider.from_env()))
+
+
 @st.fragment(run_every="30s")
 def render():
-    health, summary, items = api("/health"), api("/summary"), api("/assets")
+    health = api("/health")
+    summary, items = (api("/summary"), api("/assets")) if health else (None, None)
     if not health or not summary or items is None:
+        live_unavailable()
         return
     demo = health["mode"] == "demo"
     heading, refresh = st.columns([5, 1])
@@ -518,6 +595,8 @@ def render():
                             ("Expiring secrets (30d)", sum(code.startswith("expires_") for code in codes)),
                             ("Expired secrets", codes.count("expired")), ("Health score", average)])
         elif view == "AWS Integration":
+            aws_connection_page(False)
+            st.subheader("Discovered AWS secrets")
             metrics(chosen, [("AWS secrets", len(chosen)), ("Metadata aligned", sum(item["asset"]["sync_state"] == "metadata_aligned" for item in chosen)),
                             ("Drift / missing", sum(item["asset"]["sync_state"] in {"drift", "missing_counterpart"} for item in chosen)),
                             ("Rotation enabled", sum(item["asset"]["rotation_enabled"] is True for item in chosen))])
@@ -540,4 +619,7 @@ def render():
         inventory(chosen, view, demo)
 
 
-render()
+if APP_MODE.demo:
+    render_demo()
+else:
+    render()

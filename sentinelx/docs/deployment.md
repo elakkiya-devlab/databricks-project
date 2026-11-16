@@ -74,7 +74,9 @@ The SentinelX project is in the repository's `sentinelx` subdirectory; preserve
 that tree and use that subdirectory as the app source. Git-provider authorization
 and workspace permissions are controlled by the workspace administrator.
 
-**Databricks App dashboard:** The root `app.yaml` starts the existing Streamlit
+**Databricks App dashboard:** The default root `app.yaml` runs Demo Mode
+(`DEMO_MODE=true`) and needs no backend; see [demo-mode.md](demo-mode.md). The following
+applies to Live Mode (`DEMO_MODE=false`, `LIVE_MODE=true`). The root `app.yaml` starts the existing Streamlit
 dashboard and reads `requirements.txt` from the SentinelX root. The matching
 `deployment/app.yaml` is retained as a deployment reference. Replace the example
 `SENTINELX_API_URL` with the HTTPS URL of the separately hosted FastAPI service.

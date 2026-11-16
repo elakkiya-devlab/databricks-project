@@ -42,6 +42,7 @@ def main():
     if args.live:
         for role in ("operator", "approver"):
             dashboard_env.pop(f"SENTINELX_{role.upper()}_KEY", None)
+    dashboard_env.update(DEMO_MODE="false", LIVE_MODE="true")  # local stack: dashboard reads the API started below
     print(f"SentinelX dashboard: http://127.0.0.1:{ui_port}", flush=True)
     print(f"Authenticated API: http://127.0.0.1:{api_port} / mode: {environment['SENTINELX_MODE']}", flush=True)
     processes = []

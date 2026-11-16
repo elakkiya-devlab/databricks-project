@@ -1,6 +1,35 @@
-command: ['streamlit', 'run', 'dashboard/app.py', '--server.address', '0.0.0.0']
+command:
+  - streamlit
+  - run
+  - dashboard/app.py
+  - --server.address
+  - 0.0.0.0
+  - --server.headless
+  - 'true'
 env:
-  - name: SENTINELX_API_URL
-    value: 'https://your-private-governance-api.example.com'
-  - name: SENTINELX_READER_KEY
-    valueFrom: sentinelx-reader-key
+  # Demo Mode is self-contained: synthetic data, simulated remediation, no Databricks or AWS writes,
+  # and no separately hosted governance API required.
+  - name: DEMO_MODE
+    value: 'true'
+  - name: LIVE_MODE
+    value: 'false'
+  # Optional AWS Secrets Manager connection (never put access keys here). See docs/deployment.md.
+  # - name: SENTINELX_AWS_ACCOUNT_ID
+  #   value: '<aws-account-id>'
+  # - name: SENTINELX_AWS_REGION
+  #   value: 'us-east-1'
+  # - name: SENTINELX_AWS_ROLE_ARN
+  #   value: 'arn:aws:iam::<aws-account-id>:role/<discovery-role>'
+  # Optional Databricks Model Serving endpoint used only to classify Copilot intents.
+  # - name: SENTINELX_MODEL_SERVING_ENDPOINT
+  #   value: '<endpoint-name>'
+  #
+  # Live Mode (requires a separately hosted governance API):
+  # - name: DEMO_MODE
+  #   value: 'false'
+  # - name: LIVE_MODE
+  #   value: 'true'
+  # - name: SENTINELX_API_URL
+  #   value: 'https://<your-private-governance-api>'
+  # - name: SENTINELX_READER_KEY
+  #   valueFrom: sentinelx-reader-key

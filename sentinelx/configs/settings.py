@@ -6,6 +6,32 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 
+@dataclass(frozen=True)
+class AppMode:
+    demo: bool
+    warning: str = ""
+
+    @property
+    def live(self):
+        return not self.demo
+
+
+def _flag(value):
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def resolve_app_mode(environ=None):
+    """DEMO_MODE (default true) and LIVE_MODE select the dashboard data source; ambiguity resolves to safe demo."""
+    env = os.environ if environ is None else environ
+    live = _flag(env.get("LIVE_MODE", ""))
+    demo = _flag(env["DEMO_MODE"]) if "DEMO_MODE" in env else not live
+    if "DEMO_MODE" in env and not demo:
+        live = True
+    if demo and live:
+        return AppMode(True, "DEMO_MODE and LIVE_MODE are both true; running in Demo Mode (no cloud access).")
+    return AppMode(demo=not live)
+
+
 @dataclass
 class Settings:
     mode: str = "demo"

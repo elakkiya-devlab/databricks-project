@@ -9,6 +9,17 @@ SQLite history, authenticated FastAPI, nine Streamlit views, grounded compliance
 Q&A, a centralized remediation action center, and approval-gated reversible
 remediation. Demo mode works without a Databricks workspace or AWS account.
 
+## Databricks Apps (Demo Mode)
+
+The root `app.yaml` runs the dashboard with `DEMO_MODE=true`: a built-in synthetic dataset (10 service
+principals, 8 SP secrets, 8 PATs, 5 application credentials, 10 AWS secrets, 20 findings, 10 actions,
+5 audit records), the **SentinelX AI Copilot**, the **Remediation & Action Center** (simulated approval and
+execution, always labelled `SIMULATED REMEDIATION — NO CLOUD CHANGES PERFORMED`) and a
+**Connect AWS Secrets Manager** page that reports only real connection status. No backend, secret or cloud
+access is required. `LIVE_MODE=true` switches to the authenticated API-backed dashboard. See
+[Demo Mode, Copilot, Action Center and AWS Connection](docs/demo-mode.md) for the root cause of the earlier
+"Governance API unavailable" banner, configuration, and deployment steps.
+
 ## Start the Demo
 
 Python 3.11+ is required. From the repository root:
@@ -23,6 +34,8 @@ On Linux/macOS, use `.venv/bin/python` instead. The launcher prints the dashboar
 URL, chooses available ports, and creates random, process-only API keys. Both
 servers bind to loopback. Ctrl+C stops both. Default demo execution changes only
 local metadata; `--audit-only` disables it. No cloud credentials are needed.
+
+To run only the self-contained dashboard (Demo Mode, no API): `python -m streamlit run dashboard/app.py`.
 
 For this machine, the isolated interpreter is available at
 `../sentinelx-runtime/python.exe`; use it instead of `python`.
@@ -98,6 +111,7 @@ dependency versions used for local verification; CI builds the Docker image.
 
 ## Documentation
 
+- [Demo Mode, Copilot, Action Center and AWS connection](docs/demo-mode.md)
 - [Architecture and five diagrams](docs/architecture.md)
 - [Workspace onboarding, permissions, and live validation](docs/onboarding.md)
 - [API capability and workaround matrix](docs/capabilities.md)

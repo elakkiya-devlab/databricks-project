@@ -23,6 +23,8 @@ class DashboardTests(unittest.TestCase):
 
                 environment = {f"SENTINELX_{role.upper()}_KEY": key for role, key in KEYS.items()}
                 environment["SENTINELX_API_URL"] = "http://127.0.0.1:8000"
+                environment["DEMO_MODE"] = "false"
+                environment["LIVE_MODE"] = "true"
                 with patch.dict(os.environ, environment), patch("httpx.request", side_effect=request):
                     ui = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard/app.py"))
                     ui.run(timeout=30)

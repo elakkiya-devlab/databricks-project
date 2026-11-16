@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.copilot.model_serving import ModelServingIntentProvider
 from backend.copilot.service import ComplianceCopilot, SUGGESTED_QUESTIONS
 from backend.governance.service import Governance
 from backend.governance.findings import build_findings
@@ -65,7 +66,7 @@ def create_app(settings=None, collector=None, executor=None, copilot_intent_prov
     if settings.mode == "live" and settings.remediation_enabled and executor is None:
         executor = RenewalExecutor(settings.provider)
     workflow = Remediation(governance, settings.mode, settings.remediation_enabled, executor)
-    copilot = ComplianceCopilot(copilot_intent_provider)
+    copilot = ComplianceCopilot(copilot_intent_provider or ModelServingIntentProvider.from_env())
 
     async def periodic():
         while True:

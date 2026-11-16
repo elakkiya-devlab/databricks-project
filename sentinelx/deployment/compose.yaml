@@ -20,6 +20,8 @@ services:
     command: [python, -m, streamlit, run, dashboard/app.py, --server.address, 0.0.0.0]
     environment:
       SENTINELX_API_URL: http://api:8000
+      DEMO_MODE: "false"
+      LIVE_MODE: "true"
       SENTINELX_READER_KEY: ${SENTINELX_READER_KEY:?Set reader key}
     ports:
       - "127.0.0.1:8501:8501"
