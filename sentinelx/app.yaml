@@ -7,8 +7,8 @@ command:
   - --server.headless
   - 'true'
 env:
-  # Demo Mode is self-contained: synthetic data, simulated remediation, no Databricks or AWS writes,
-  # and no separately hosted governance API required.
+  # Demo Mode is self-contained: synthetic data, simulated remediation and no separately hosted governance API.
+  # AWS changes happen only if the SentinelPilot execution variables below are set and a human approves a plan.
   - name: DEMO_MODE
     value: 'true'
   - name: LIVE_MODE
@@ -20,6 +20,22 @@ env:
   #   value: 'us-east-1'
   # - name: SENTINELX_AWS_ROLE_ARN
   #   value: 'arn:aws:iam::<aws-account-id>:role/<discovery-role>'
+  # Optional SentinelPilot execution after human approval (off by default; see docs/demo-mode.md).
+  # - name: SENTINELX_AWS_EXECUTION_ENABLED
+  #   value: 'true'
+  # - name: SENTINELX_AWS_ALLOWED_SECRET_PREFIXES
+  #   value: 'sentinelx/'
+  # - name: SENTINELX_AWS_REMEDIATION_ROLE_ARN
+  #   value: 'arn:aws:iam::<aws-account-id>:role/<remediation-role>'
+  # Databricks credential sync and persistent audit (see docs/demo-mode.md).
+  # - name: SENTINELX_SYNC_BINDINGS
+  #   value: '[{"name":"etl-oauth","kind":"service_principal_secret","aws_secret":"sentinelx/prod/etl/oauth","scope":"etl","key":"client_secret","service_principal_id":"<id>","client_id":"<app-id>","scopes":["all-apis"],"lifetime_days":90,"rollback_contract_verified_by_owner":true}]'
+  # - name: SENTINELX_DATABRICKS_ACCOUNT_ID
+  #   value: '<databricks-account-id>'
+  # - name: SENTINELX_AUDIT_TABLE
+  #   value: 'main.sentinelx.agent_audit'
+  # - name: SENTINELX_SQL_WAREHOUSE_ID
+  #   value: '<warehouse-id>'
   # Optional Databricks Model Serving endpoint used only to classify Copilot intents.
   # - name: SENTINELX_MODEL_SERVING_ENDPOINT
   #   value: '<endpoint-name>'

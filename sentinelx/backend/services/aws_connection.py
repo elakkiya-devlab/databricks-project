@@ -24,7 +24,8 @@ REQUIRED_PERMISSIONS = [
     ("sts:GetCallerIdentity", "Validate the connected identity (checked)"),
     ("secretsmanager:ListSecrets", "Discover secret inventory metadata (checked)"),
     ("secretsmanager:DescribeSecret", "Read rotation and version-stage metadata (discovery role)"),
-    ("secretsmanager:PutSecretValue / UpdateSecretVersionStage", "Stage and promote rotated values (separate remediation role only)"),
+    ("secretsmanager:RotateSecret", "Start native rotation when rotation is enabled (separate remediation role only)"),
+    ("secretsmanager:PutSecretValue / UpdateSecretVersionStage", "Write a new value and roll back (separate remediation role only)"),
     ("kms:Decrypt / kms:GenerateDataKey", "Use the secret's KMS key via Secrets Manager (remediation role only)"),
 ]
 _CLIENT_CONFIG = Config(connect_timeout=5, read_timeout=10, retries={"max_attempts": 2})
@@ -120,14 +121,14 @@ class AwsConnector:
         return ConnectionResult("connected", "Identity and Secrets Manager read access verified.",
                                 identity_arn=identity["Arn"], account_id=identity["Account"], permissions=permissions)
 
-    def _credentials(self, sso_credentials):
+    def _credentials(self, sso_credentials, role_arn=None, session_name="sentinelx-connection-check"):
         config = self.config
         if config.auth_method == "identity_center":
             if not sso_credentials or sso_credentials.get("expiration", 0) <= time.time() * 1000:
                 raise LoginRequired
             return dict(aws_access_key_id=sso_credentials["access_key_id"], aws_secret_access_key=sso_credentials["secret_access_key"],
                         aws_session_token=sso_credentials["session_token"])
-        arguments = dict(RoleArn=config.role_arn, RoleSessionName="sentinelx-connection-check", DurationSeconds=900)
+        arguments = dict(RoleArn=role_arn or config.role_arn, RoleSessionName=session_name, DurationSeconds=900)
         if config.external_id:
             arguments["ExternalId"] = config.external_id
         assumed = self._client("sts", region_name=config.region).assume_role(**arguments)["Credentials"]

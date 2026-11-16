@@ -15,6 +15,7 @@ import httpx  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+from agent_page import agent_panel  # noqa: E402
 from aws_page import aws_connection_page, aws_status  # noqa: E402
 from backend.copilot.model_serving import ModelServingIntentProvider  # noqa: E402
 from backend.demo.copilot import DemoCopilot  # noqa: E402
@@ -392,6 +393,10 @@ def action_center(health):
 
 
 def copilot_page():
+    if st.segmented_control("Assistant", ["Ask Copilot", "SentinelPilot (AWS agent)"], default="Ask Copilot",
+                            label_visibility="collapsed", key="assistant_mode") == "SentinelPilot (AWS agent)":
+        agent_panel()
+        return
     st.caption("Grounded answers are computed from the latest report, current findings, and remediation action store. No credential values are provided to the Copilot.")
     if "copilot_messages" not in st.session_state:
         st.session_state["copilot_messages"] = []

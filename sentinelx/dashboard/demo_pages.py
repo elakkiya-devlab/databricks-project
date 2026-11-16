@@ -1,18 +1,53 @@
 """Demo Mode pages. Every figure is computed from the shared DemoWorkspace; nothing reaches Databricks or AWS."""
 
+import os
+
 import altair as alt
 import pandas as pd
 import streamlit as st
 from shared import RISK_COLORS, metric_row, nav_button, navigate, risk_label, status_badge
 
+from agent_page import agent_panel, execution_enabled
 from aws_page import aws_connection_page
+from backend.demo.agent_context import make_resolver
 from backend.demo.catalog import SEVERITY_DEFINITIONS, SEVERITY_ORDER, TYPE_LABELS
 from backend.demo.copilot import SUGGESTED_QUESTIONS
 from backend.demo.engine import APPROVER, DEMO_BADGE, OPERATOR, SIMULATION_LABEL, WorkflowError
+from backend.services.aws_connection import AwsConfig
 
 ACTION_CENTER = "Remediation & Action Center"
 COPILOT = "SentinelX AI Copilot"
+AWS_CONSOLE_URL = os.environ.get("SENTINELX_AWS_CONSOLE_URL", "").strip() or "https://signin.aws.amazon.com/signup?request_type=register"
 CREDENTIAL_TYPES = [kind for kind in TYPE_LABELS if kind != "service_principal"]
+
+EXECUTION_READINESS = """\
+The AI Agent helps users understand and prepare credential remediation. When real execution is enabled, it may request \
+approved actions through validated backend tools; deterministic backend services perform the actual changes.
+
+**The AI Agent should:**
+- Understand natural-language remediation requests and retrieve relevant findings from the governance dataset.
+- Explain why a credential is non-compliant and recommend an appropriate remediation.
+- Prepare an execution plan: finding, target resource, proposed action and verification steps.
+- Present the plan for human approval before execution.
+- Invoke only authorized, explicitly supported backend actions after approval.
+- Interpret execution and verification results, explain failures and suggest safe recovery steps.
+- Ensure results and audit records accurately reflect what happened.
+
+**The AI Agent must not:**
+- Bypass human approval or execute a plan that differs from the approved plan.
+- Execute arbitrary shell commands or uploaded code.
+- Directly access, reveal or log credential values.
+- Claim an action succeeded unless the backend confirms it and verification passes.
+- Change resources outside the approved plan.
+- Retry or recover in ways that could cause unintended changes; any new action must be validated and, where required, \
+approved again.
+
+Execution logic stays in deterministic backend services that validate authorization, targets and approval, verify the \
+result and write an audit event without sensitive values.
+
+*The dataset and Action Center workflow remain simulated. The SentinelPilot tab changes AWS Secrets Manager (and bound \
+Databricks credentials) only when explicitly configured and a human approves the specific plan.*
+"""
 
 
 def _date(value):
@@ -31,6 +66,10 @@ def _empty(message):
 
 
 def _banner(ws):
+    if execution_enabled():
+        status_badge(f"{DEMO_BADGE.upper()} &nbsp; / &nbsp; SIMULATED DATASET &nbsp; / &nbsp; SENTINELPILOT AWS EXECUTION ENABLED "
+                     "(APPROVAL REQUIRED)", "warn")
+        return
     status_badge(f"{DEMO_BADGE.upper()} &nbsp; / &nbsp; SIMULATED APPROVALS &nbsp; / &nbsp; NO CLOUD WRITES")
 
 
@@ -264,6 +303,12 @@ def compliance_reports(ws):
 
 # ------------------------------------------------------------------------------------------------------------------
 def copilot_page(ws, copilot):
+    with st.expander("AI Agent — Execution Readiness", icon=":material/verified_user:"):
+        st.markdown(EXECUTION_READINESS)
+    if st.segmented_control("Assistant", ["Ask Copilot", "SentinelPilot (AWS agent)"], default="Ask Copilot",
+                            label_visibility="collapsed", key="assistant_mode") == "SentinelPilot (AWS agent)":
+        agent_panel(ws, copilot)
+        return
     st.caption("Answers are calculated from the synthetic dataset. The Copilot explains findings and links to workflows; "
                "it never changes credentials or approves actions.")
     st.session_state.setdefault("copilot_messages", [])
@@ -326,6 +371,9 @@ def _next_step(row):
 
 
 def action_center(ws):
+    popup = st.session_state.pop("pilot_popup", None)
+    if popup:
+        _pilot_dialog(ws, popup)
     screen = st.session_state.get("ac_screen", "list")
     finding_id = st.session_state.get("ac_finding")
     if screen != "list":
@@ -338,6 +386,42 @@ def action_center(ws):
     nav_button("Back to all findings", ACTION_CENTER, "ac-back", icon=":material/arrow_back:", ac_screen="list")
     {"finding": _finding_screen, "evidence": _evidence_screen, "steps": _steps_screen, "approval": _approval_screen,
      "audit": _audit_screen}[screen](ws, finding_id)
+
+
+def _pilot_dialog(ws, popup):
+    """Pop SentinelPilot up after a simulated decision and hand the user to the AWS Console and the agent."""
+    finding_id, event = popup["finding_id"], popup["event"]
+    resolved = make_resolver(ws)(finding_id) or {}
+    target = resolved.get("secret_name")
+    config = AwsConfig.from_env()
+
+    @st.dialog("SentinelX AI Copilot · SentinelPilot", width="large")
+    def show():
+        finding = ws.finding(finding_id)
+        with st.chat_message("assistant"):
+            st.markdown(f"**{finding_id} · {finding['title']}** on `{finding['asset_name']}`: your simulated "
+                        f"{'approval' if event == 'approved' else 'execution'} was recorded. "
+                        "This dataset is synthetic, so **no cloud changes were made**.")
+            if target:
+                st.markdown(f"To remediate it for real I would rotate the AWS secret `{target}`"
+                            + (" together with its bound Databricks credential." if finding["credential_type"] != "aws_secret" else "."))
+            else:
+                st.markdown(resolved.get("unsupported") or "This finding has no AWS secret I can rotate.")
+            st.markdown("1. Open the AWS Console in a new tab and sign in.\n"
+                        "2. Return here and let me prepare the plan. You approve it, then I execute and verify it.")
+            if not config.configured:
+                st.warning("**AWS is not configured** in this app yet; finish setup on the AWS Integration page first.")
+        left, middle, right = st.columns(3)
+        left.link_button("Open AWS Console", AWS_CONSOLE_URL, icon=":material/open_in_new:", width="stretch")
+        # Buttons inside a dialog only rerun the dialog fragment, so a full rerun is needed to navigate or close it.
+        if middle.button("Continue with SentinelPilot", key="pilot-continue", icon=":material/smart_toy:", type="primary",
+                         disabled=not target, width="stretch"):
+            navigate(COPILOT, assistant_mode="SentinelPilot (AWS agent)", agent_pending=f"Fix {finding_id}")
+            st.rerun()
+        if right.button("Close", key="pilot-close", width="stretch"):
+            st.rerun()
+
+    show()
 
 
 def _action_bar(finding, key):
@@ -458,6 +542,7 @@ def _approval_screen(ws, finding_id):
             columns = st.columns(2)
             if columns[0].button("Approve (simulated)", key="ac-approve", icon=":material/verified:", type="primary"):
                 ws.decide(action["id"], True, APPROVER)
+                st.session_state["pilot_popup"] = dict(finding_id=finding_id, event="approved")
                 st.rerun()
             if columns[1].button("Reject (simulated)", key="ac-reject", icon=":material/block:"):
                 ws.decide(action["id"], False, APPROVER)
@@ -468,6 +553,7 @@ def _approval_screen(ws, finding_id):
             if st.button("Execute Remediation (simulated)", key="ac-execute", icon=":material/play_arrow:", type="primary",
                          disabled=not confirmed):
                 ws.execute(action["id"], OPERATOR, confirmed)
+                st.session_state["pilot_popup"] = dict(finding_id=finding_id, event="executed")
                 st.rerun()
     except WorkflowError as error:
         st.error(str(error))

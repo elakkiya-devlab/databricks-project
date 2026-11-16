@@ -10,7 +10,8 @@ from backend.demo.engine import SIMULATION_LABEL, DemoWorkspace
 APP = str(Path(__file__).resolve().parents[1] / "dashboard/app.py")
 CLEAN = {"DEMO_MODE": "true", "LIVE_MODE": "false"}
 UNSET = ("SENTINELX_API_URL", "SENTINELX_READER_KEY", "SENTINELX_AWS_ACCOUNT_ID", "SENTINELX_AWS_REGION",
-         "SENTINELX_AWS_ROLE_ARN", "SENTINELX_AWS_AUTH_METHOD", "SENTINELX_AWS_SSO_START_URL", "SENTINELX_MODEL_SERVING_ENDPOINT")
+         "SENTINELX_AWS_ROLE_ARN", "SENTINELX_AWS_AUTH_METHOD", "SENTINELX_AWS_SSO_START_URL", "SENTINELX_MODEL_SERVING_ENDPOINT",
+         "SENTINELX_AWS_EXECUTION_ENABLED", "SENTINELX_AWS_ALLOWED_SECRET_PREFIXES", "SENTINELX_AWS_REMEDIATION_ROLE_ARN")
 
 
 def texts(ui):
@@ -102,6 +103,24 @@ class DemoDashboardTests(unittest.TestCase):
         self.assertNotIn("successfully renewed", texts(self.ui).lower())
         self.button("approval-View Audit History").click().run()
         self.assertTrue(any("execution_simulated" in str(frame.value.to_dict()) for frame in self.ui.dataframe))
+
+    def test_simulated_approval_and_execution_pop_up_sentinelpilot(self):
+        self.go("Remediation & Action Center")
+        self.ui.selectbox(key="ac-select").select("SX-1001").run()
+        self.button("list-View Finding").click().run()
+        self.button("detail-Request Approval").click().run()
+        self.button("ac-approve").click().run()
+        popup = "\n".join(element.value for element in self.ui.markdown)
+        self.assertIn("simulated approval was recorded", popup)
+        self.assertIn("no cloud changes were made", popup)
+        self.assertIn("sentinelx/prod/ml-feature-store/oauth", popup)
+        self.assertTrue(any("signin.aws.amazon.com" in str(element.proto) for element in self.ui.get("link_button")))
+        self.assertTrue(any("AWS is not configured" in item.value for item in self.ui.warning))
+        self.ui.checkbox(key="ac-confirm").check().run()
+        self.button("ac-execute").click().run()
+        self.assertIn("simulated execution was recorded", "\n".join(element.value for element in self.ui.markdown))
+        self.assertFalse(self.button("pilot-continue").disabled)
+        self.assertFalse(self.ui.exception)
 
     def test_ask_ai_opens_copilot_with_finding_context(self):
         self.go("Remediation & Action Center")

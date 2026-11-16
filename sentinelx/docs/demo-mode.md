@@ -28,8 +28,8 @@ Fixes:
 | both `true` | Conflict; the dashboard falls back to Demo Mode and says so |
 
 Demo Mode never imports provider clients for writes. The only optional cloud calls are the read-only AWS
-connection check (`sts:GetCallerIdentity`, `secretsmanager:ListSecrets` with `MaxResults=1`) and, if
-configured, a Databricks Model Serving intent classification.
+connection check (`sts:GetCallerIdentity`, `secretsmanager:ListSecrets` with `MaxResults=1`), the optional
+Model Serving intent classification, and the opt-in SentinelPilot AWS agent described below.
 
 ## Synthetic dataset
 
@@ -91,6 +91,80 @@ Otherwise the page shows "AWS connection is not configured..." or the AWS error 
 fabricates success. Temporary Identity Center credentials live only in server session memory and are cleared
 by Disconnect. Use the discovery policy in `deployment/iam-discovery.json`; remediation roles remain separate.
 
+## SentinelPilot AWS agent (real Secrets Manager rotation, opt-in)
+
+After you press **Approve (simulated)** or **Execute Remediation (simulated)** in the Action Center, a SentinelPilot dialog
+pops up. It restates that nothing in the cloud changed, names the AWS secret the finding maps to, offers **Open AWS Console**
+(opens a new tab; browsers do not allow a page to open tabs by itself, so it is a button) and **Continue with SentinelPilot**,
+which jumps to the agent with `Fix <finding>` already asked. The console link defaults to
+`https://signin.aws.amazon.com/signup?request_type=register`; set `SENTINELX_AWS_CONSOLE_URL` to your account's sign-in
+or Secrets Manager console URL to land somewhere more useful.
+
+On **SentinelX AI Copilot**, switch to **SentinelPilot (AWS agent)**. It is a chat agent whose only actions are
+validated backend tools (`backend/agent/remediation_agent.py`, `backend/services/aws_remediation.py`):
+
+1. Ask in plain language, e.g. `Is AWS configured?`, `List my AWS secrets`, `Rotate sentinelx/prod/app/key`, `Fix SX-1019`.
+   If AWS is not configured the agent answers **"AWS is not configured"** and makes no AWS call.
+2. For a rotation the agent reads secret metadata and proposes a plan: native `RotateSecret` when the secret has
+   rotation enabled, otherwise a newly generated random value written with `PutSecretValue`. Nothing changes yet.
+3. A human ticks the confirmation and presses **Approve and execute**. The agent cannot approve (chat requests to
+   approve are refused). The backend then re-validates the approval, allowed prefix, AWS account and that the secret
+   is unchanged since planning, executes exactly that plan, and verifies the version stages (no values are read).
+4. Results are reported as verified, not-yet-confirmed or failed. Generated-value rotations can be rolled back to
+   `AWSPREVIOUS`. Every step is written to the agent audit log without secret material.
+
+Execution is off by default. To enable it set (non-secret) App variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `SENTINELX_AWS_EXECUTION_ENABLED=true` | Allow approved plans to execute |
+| `SENTINELX_AWS_ALLOWED_SECRET_PREFIXES=sentinelx/` | Comma-separated name prefixes the agent may change (required) |
+| `SENTINELX_AWS_REMEDIATION_ROLE_ARN` | Separate write role assumed only for approved execution (IAM Role method) |
+
+The remediation role needs `secretsmanager:DescribeSecret`, `RotateSecret`, `PutSecretValue`,
+`UpdateSecretVersionStage` on the allowed secrets (plus KMS use of their key). Generated-value rotation replaces the
+whole secret value, so use it for test or simple secrets; structured credentials should use native rotation.
+Scope: the agent now works across AWS Secrets Manager **and Databricks** (see below). The dataset and Action Center
+workflow remain simulated. Plans live in the session; the audit trail is session-only unless the Delta table is configured.
+
+### Databricks credential sync (cross-platform rotation)
+
+Declare which Databricks credentials mirror which AWS secrets in `SENTINELX_SYNC_BINDINGS` (JSON list; the agent can
+only touch declared bindings). When a plan targets a bound AWS secret, it becomes a **cross-platform sync**: create the
+new Databricks credential, stage it in AWS (pending), validate it, write the Databricks secret scope key, promote the AWS
+version, then verify. Failures stop before promotion and offer **Roll back**, which restores the previous credential on
+both platforms and revokes the unused new one.
+
+```json
+[{"name": "etl-oauth", "kind": "service_principal_secret", "aws_secret": "sentinelx/prod/etl/oauth",
+  "scope": "etl", "key": "client_secret", "service_principal_id": "<id>", "client_id": "<application id>",
+  "scopes": ["all-apis"], "lifetime_days": 90, "rollback_contract_verified_by_owner": true},
+ {"name": "ci-pat", "kind": "pat", "aws_secret": "sentinelx/dev/ci/pat", "scope": "ci", "key": "token",
+  "application_id": "<service principal application id>", "lifetime_days": 30, "rollback_contract_verified_by_owner": true}]
+```
+
+- `service_principal_secret`: AWS payload must be JSON `{client_id, client_secret, secret_id}`; needs `DATABRICKS_HOST`,
+  `SENTINELX_DATABRICKS_ACCOUNT_ID` and an App identity allowed to manage that service principal's secrets (account level).
+- `pat`: creates an on-behalf-of token for the service principal (App identity must be a workspace admin); the AWS payload
+  is the token string. The previous PAT is not revoked automatically and stays valid until it expires.
+- The owner attestation `rollback_contract_verified_by_owner` is mandatory: AWS's current version is the rollback source.
+- The App identity also needs `WRITE`/`MANAGE` on the Databricks secret scope used by each binding.
+
+### Language model (optional)
+
+Set `SENTINELX_MODEL_SERVING_ENDPOINT` to let a Databricks Model Serving chat endpoint (1) map free-form requests to an
+allowlisted tool (`aws_status`, `list_secrets`, `plan_rotation`, `explain_finding`, `ask_governance`, `help`) and (2) add a
+short "Pilot's note" to plans and results. The model only sees your message and non-sensitive facts. It cannot approve,
+execute or call arbitrary tools, its notes are discarded if they look like credentials or claim success that the backend
+did not verify, and without the endpoint the agent uses deterministic routing.
+
+### Persistent audit trail (Delta)
+
+Set `SENTINELX_AUDIT_TABLE=<catalog>.<schema>.<table>` and `SENTINELX_SQL_WAREHOUSE_ID`. The table is created on first
+write (`event_id, at, session_id, actor, event, target, detail`). Approval and execution start are **fail-closed**: if the
+durable log cannot be written, the agent refuses to approve or change anything. Grant the App identity only `SELECT` and
+`INSERT` on the table (no UPDATE/DELETE) and use Delta history for tamper evidence. The page can load recent persisted events.
+
 ## Deploy to Databricks Apps
 
 1. In the workspace, create or open the `sentinelx` App and point it at this `sentinelx` directory
@@ -113,6 +187,8 @@ Check App logs for `sentinelx.dashboard` warnings if a configured backend is unr
 | Copilot answers, follow-ups, refusals, model-serving allowlist | `tests/test_demo_workflow.py` |
 | All nine pages, navigation, AWS page, single live banner | `tests/test_demo_dashboard.py` |
 | AWS connection logic (botocore Stubber) | `tests/test_aws_connection.py` |
+| SentinelPilot agent: not-configured, plan/approve/execute/verify, rollback, guardrails (fake Secrets Manager) | `tests/test_aws_agent.py` |
+| Databricks sync (SP secret + PAT), rollback, Delta audit (fail-closed), language-model guardrails | `tests/test_databricks_sync.py` |
 | Live gating (no executor / disabled execution / unsupported action) | `tests/test_demo_workflow.py`, `tests/test_workflow.py` |
 
 Requires your accounts (not testable here): the Databricks Apps deployment itself, a real AWS role or
