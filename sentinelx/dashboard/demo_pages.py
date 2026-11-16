@@ -1,6 +1,9 @@
 """Demo Mode pages. Every figure is computed from the shared DemoWorkspace; nothing reaches Databricks or AWS."""
 
+import html
 import os
+import re
+from datetime import datetime
 
 import altair as alt
 import pandas as pd
@@ -373,6 +376,7 @@ def _next_step(row):
 def action_center(ws):
     popup = st.session_state.pop("pilot_popup", None)
     if popup:
+        st.session_state["pilot_full_plan"] = False
         _pilot_dialog(ws, popup)
     screen = st.session_state.get("ac_screen", "list")
     finding_id = st.session_state.get("ac_finding")
@@ -388,6 +392,58 @@ def action_center(ws):
      "audit": _audit_screen}[screen](ws, finding_id)
 
 
+PILOT_CSS = """
+<style>
+.pilot-head{display:flex;align-items:center;gap:8px;margin:0 0 4px}
+.pilot-head b{font-size:1.02rem}
+.pilot-ai{background:#ece8fb;color:#5b45b5;border-radius:6px;padding:1px 8px;font-size:.72rem;font-weight:700}
+.pilot-time{color:#7b8190;font-size:.8rem}
+.pilot-step{display:flex;align-items:flex-start;gap:10px;margin:7px 0;line-height:1.35}
+.pilot-step i{flex:0 0 22px;height:22px;border-radius:50%;background:#7c5cd6;color:#fff;font-style:normal;
+  font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.pilot-step code,.pilot-card code{background:#e6f4ee;color:#1d6b49;border-radius:4px;padding:1px 6px}
+.pilot-title{font-weight:700;margin-bottom:6px;color:#2a2f45}
+.pilot-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid #eef0f4;font-size:.9rem}
+.pilot-row:last-child{border-bottom:0}
+.pilot-row span{color:#5d6475}
+.pilot-pill{border-radius:999px;padding:1px 10px;font-weight:600;font-size:.8rem}
+</style>
+"""
+
+
+def _code(text):
+    """HTML-escape text and render `backticked` spans as code."""
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text))
+
+
+def _db_credential_name(ws, asset):
+    """Name of the Databricks credential or principal tied to this asset (or to the AWS secret bound to it)."""
+    try:
+        if asset["credential_type"] == "aws_secret" or asset["credential_type"] == "sp_secret":
+            return ws.asset(asset["parent_id"])["name"] if asset["parent_id"] else asset["name"]
+    except StopIteration:
+        return "—"
+    return asset["name"]
+
+
+def _pilot_steps(target, bound_databricks):
+    steps = ["Open the AWS Console and sign in.", f"Rotate the secret `{target}` in AWS Secrets Manager."]
+    if bound_databricks:
+        steps.append(f"Update the corresponding Databricks credential `{bound_databricks}` with the new secret.")
+    steps += ["Verify the new credential" + (" is synchronized between Databricks and AWS." if bound_databricks else " in AWS."),
+              "Record the change in the audit trail."]
+    return steps
+
+
+def _expiry_text(ws, asset):
+    expiry = asset["expiry_date"]
+    if expiry is None:
+        return "No expiry on record"
+    days = (expiry - ws.today).days
+    when = "Expired " + f"{-days} days ago" if days < 0 else ("Expires today" if days == 0 else f"In {days} days")
+    return f"{when} ({expiry.strftime('%b %d, %Y')})"
+
+
 def _pilot_dialog(ws, popup):
     """Pop SentinelPilot up after a simulated decision and hand the user to the AWS Console and the agent."""
     finding_id, event = popup["finding_id"], popup["event"]
@@ -398,27 +454,65 @@ def _pilot_dialog(ws, popup):
     @st.dialog("SentinelX AI Copilot · SentinelPilot", width="large")
     def show():
         finding = ws.finding(finding_id)
-        with st.chat_message("assistant"):
-            st.markdown(f"**{finding_id} · {finding['title']}** on `{finding['asset_name']}`: your simulated "
-                        f"{'approval' if event == 'approved' else 'execution'} was recorded. "
-                        "This dataset is synthetic, so **no cloud changes were made**.")
+        asset = ws.asset(finding["asset_id"])
+        bound = _db_credential_name(ws, asset) if target else ""
+        bound = "" if asset["credential_type"] == "aws_secret" and not asset["parent_id"] else bound
+        question = (f"{finding_id} – {finding['title']}. Can you prepare a remediation plan to rotate the AWS secret"
+                    + (" and keep it in sync with the Databricks credential?" if bound else "?")) if target else \
+            f"{finding_id} – {finding['title']}. Can you help me remediate it?"
+        st.markdown(PILOT_CSS, unsafe_allow_html=True)
+        with st.chat_message("user"):
+            st.markdown(question)
+        with st.chat_message("assistant", avatar=":material/smart_toy:"):
+            st.markdown(f'<div class="pilot-head"><b>SentinelPilot</b><span class="pilot-ai">AI</span>'
+                        f'<span class="pilot-time">Today, {datetime.now().strftime("%I:%M %p").lstrip("0")}</span></div>',
+                        unsafe_allow_html=True)
+            st.markdown(f"**{finding_id} – {finding['title']}** on `{finding['asset_name']}`. Your simulated "
+                        f"{'approval' if event == 'approved' else 'execution'} was recorded. This dataset is synthetic, "
+                        "so **no cloud changes were made**.")
             if target:
-                st.markdown(f"To remediate it for real I would rotate the AWS secret `{target}`"
-                            + (" together with its bound Databricks credential." if finding["credential_type"] != "aws_secret" else "."))
+                st.markdown("To remediate it for real, I can rotate the AWS secret"
+                            + (" and synchronize it with its bound Databricks credential." if bound else "."))
             else:
                 st.markdown(resolved.get("unsupported") or "This finding has no AWS secret I can rotate.")
-            st.markdown("1. Open the AWS Console in a new tab and sign in.\n"
-                        "2. Return here and let me prepare the plan. You approve it, then I execute and verify it.")
-            if not config.configured:
-                st.warning("**AWS is not configured** in this app yet; finish setup on the AWS Integration page first.")
-        left, middle, right = st.columns(3)
-        left.link_button("Open AWS Console", AWS_CONSOLE_URL, icon=":material/open_in_new:", width="stretch")
+        if target:
+            plan, details = st.columns([3, 2])
+            with plan.container(border=True):
+                st.markdown('<div class="pilot-title">Recommended Remediation Plan</div>' + "".join(
+                    f'<div class="pilot-step"><i>{number}</i><span>{_code(text)}</span></div>'
+                    for number, text in enumerate(_pilot_steps(target, bound), 1)), unsafe_allow_html=True)
+            with details.container(border=True):
+                rows = [("Resource Type", finding["type_label"]), ("Databricks credential", bound or "—"),
+                        ("AWS Secret", f"<code>{html.escape(target)}</code>"), ("Risk Level", risk_label(finding["severity"])),
+                        ("Expiry", html.escape(_expiry_text(ws, asset))), ("Status", html.escape(finding["remediation_status"]))]
+                st.markdown(f'<div class="pilot-title">Finding Details – {finding_id}</div>' + "".join(
+                    f'<div class="pilot-row"><span>{label}</span><b>{value if label in {"AWS Secret", "Risk Level"} else html.escape(str(value))}</b></div>'
+                    for label, value in rows), unsafe_allow_html=True)
+        if not config.configured:
+            note, goto = st.columns([4, 1], vertical_alignment="center")
+            note.warning("**AWS is not configured in this app yet.** Finish the AWS integration on the AWS Integration page "
+                         "to execute the remediation in a real environment.")
+            if goto.button("Go to AWS Integration", key="pilot-aws", icon=":material/settings:", width="stretch"):
+                navigate("AWS Integration")
+                st.rerun()
+        if st.session_state.get("pilot_full_plan"):
+            guide = ws.guidance(finding_id)
+            with st.container(border=True):
+                st.markdown("**Full plan**")
+                st.dataframe(pd.DataFrame(guide["steps"]), hide_index=True, width="stretch")
+                st.markdown(f"**Required permissions:** {guide['required_permissions']}  \n"
+                            f"**Operational impact:** {guide['operational_impact']}  \n**Rollback:** {guide['rollback']}")
+        first, second, third, fourth = st.columns([1, 1, 1.6, 1])
+        first.link_button("Open AWS Console", AWS_CONSOLE_URL, icon=":material/open_in_new:", width="stretch")
         # Buttons inside a dialog only rerun the dialog fragment, so a full rerun is needed to navigate or close it.
-        if middle.button("Continue with SentinelPilot", key="pilot-continue", icon=":material/smart_toy:", type="primary",
-                         disabled=not target, width="stretch"):
-            navigate(COPILOT, assistant_mode="SentinelPilot (AWS agent)", agent_pending=f"Fix {finding_id}")
+        if second.button("View Full Plan", key="pilot-full", icon=":material/description:", width="stretch"):
+            st.session_state["pilot_full_plan"] = not st.session_state.get("pilot_full_plan", False)
+            st.rerun(scope="fragment")
+        if third.button("Continue with SentinelPilot", key="pilot-continue", icon=":material/play_arrow:", type="primary",
+                        disabled=not target, width="stretch"):
+            navigate(COPILOT, assistant_mode="SentinelPilot (AWS agent)", agent_pending=question)
             st.rerun()
-        if right.button("Close", key="pilot-close", width="stretch"):
+        if fourth.button("Close", key="pilot-close", width="stretch"):
             st.rerun()
 
     show()
