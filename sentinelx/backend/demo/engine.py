@@ -14,6 +14,12 @@ from backend.demo.catalog import ACTION_TYPES, RULES, SEVERITY_ORDER, TYPE_LABEL
 
 SIMULATION_LABEL = "SIMULATED REMEDIATION — NO CLOUD CHANGES PERFORMED"
 DEMO_BADGE = "Demo Mode — Synthetic Data"
+DEMO_MODE_BADGE = "DEMO MODE"
+DEMO_SUCCESS_HEADING = "REMEDIATION COMPLETED SUCCESSFULLY"
+DEMO_SUCCESS_DESCRIPTION = ("SentinelX successfully completed the credential remediation workflow in Demo Mode. "
+                            "All simulated updates, synchronization and verification steps completed successfully.")
+DATABRICKS_UPDATE_ACTIONS = {"renew_sp_secret", "rotate_pat", "rotate_app_credential", "sync_secret"}
+AWS_SYNC_ACTIONS = {"rotate_aws_secret", "sync_secret"}
 PENALTY = {"critical": 45, "high": 30, "medium": 15, "low": 5}
 APPROVAL_LABELS = {"none": "Not Requested", "pending": "Pending Approval", "approved": "Approved", "rejected": "Rejected"}
 STATUS_LABELS = {"none": "Open", "awaiting_approval": "Awaiting Approval", "ready": "Ready to Execute",
@@ -338,6 +344,23 @@ class DemoWorkspace:
     def audit(self, target=None):
         events = [dict(event) for event in self._audit if target is None or event["target"] == target]
         return sorted(events, key=lambda event: event["at"], reverse=True)
+
+    def execution_result(self, action_id):
+        """Simulated execution outcome derived from the recorded action and audit trail; None until completed."""
+        action = self.action(action_id)
+        if action["status"] != "completed":
+            return None
+        kind = action["action_type"]
+        checks = []
+        if kind in DATABRICKS_UPDATE_ACTIONS:
+            checks.append(dict(label="Databricks credential update simulated successfully", ok=True))
+        if kind in AWS_SYNC_ACTIONS:
+            checks.append(dict(label="AWS Secrets Manager synchronization simulated successfully", ok=True))
+        checks.append(dict(label="Credential synchronization verified", ok=True))
+        recorded = any(event["event"] == "execution_simulated" for event in self.audit(action_id))
+        checks.append(dict(label="Remediation audit record generated", ok=recorded))
+        return dict(action=action, checks=checks, success=all(check["ok"] for check in checks), cloud_changes=False,
+                    mode_badge=DEMO_MODE_BADGE, heading=DEMO_SUCCESS_HEADING, description=DEMO_SUCCESS_DESCRIPTION)
 
     def reset(self):
         self.__init__(self.today)

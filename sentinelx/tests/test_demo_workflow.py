@@ -126,6 +126,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["simulation_label"], SIMULATION_LABEL)
         self.assertFalse(result["cloud_changes"])
         self.assertEqual(result["action"]["status"], "completed")
+        outcome = self.ws.execution_result(action["id"])
+        self.assertTrue(outcome["success"])
+        self.assertFalse(outcome["cloud_changes"])
+        self.assertEqual([c["label"] for c in outcome["checks"]][-2:],
+                         ["Credential synchronization verified", "Remediation audit record generated"])
+        self.assertIsNone(self.ws.execution_result("ACT-2001"))
         again = self.ws.execute(action["id"], OPERATOR, confirmed=True)
         self.assertTrue(again["already_executed"])
         self.assertEqual(len([e for e in self.ws.audit(action["id"]) if e["event"] == "execution_simulated"]), 1)

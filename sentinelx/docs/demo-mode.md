@@ -67,8 +67,11 @@ used by the API Copilot in Live Mode.
 Routing is session-state based (`ac_screen`, `ac_finding`), passed by button callbacks: list, finding
 detail, evidence, remediation steps, approval/execution and audit history. Ask AI opens the Copilot with
 the finding as context. Demo workflow: request approval, approve (separate simulated actor), confirm, then
-execute. Every step is audited in memory and labelled
-**SIMULATED REMEDIATION — NO CLOUD CHANGES PERFORMED**; no live-success message is ever shown.
+execute. Every step is audited in memory and remains simulated. Before execution the approval screen shows
+**SIMULATED REMEDIATION — NO CLOUD CHANGES PERFORMED**; after a completed execution it shows a green
+**DEMO MODE** success card (**REMEDIATION COMPLETED SUCCESSFULLY**) whose indicators come from
+`DemoWorkspace.execution_result`, i.e. the recorded action and audit trail. No cloud changes are made and
+the live-success message is never shown.
 Use "Reset demo data" on Audit & Governance to restore the seed state.
 
 Live Mode keeps the existing controls: explicit live mode, owner-attested binding, preflight/dry run,

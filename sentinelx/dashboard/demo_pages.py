@@ -8,7 +8,7 @@ from datetime import datetime
 import altair as alt
 import pandas as pd
 import streamlit as st
-from shared import RISK_COLORS, metric_row, nav_button, navigate, risk_label, status_badge
+from shared import RISK_COLORS, metric_row, nav_button, navigate, risk_label, status_badge, success_card
 
 from agent_page import agent_panel, execution_enabled
 from aws_page import aws_connection_page
@@ -613,14 +613,24 @@ def _steps_screen(ws, finding_id):
 def _approval_screen(ws, finding_id):
     finding = ws.finding(finding_id)
     _finding_header(finding)
-    status_badge(SIMULATION_LABEL, "warn")
     action = ws.action_for_finding(finding_id)
+    result = ws.execution_result(action["id"]) if action else None
+    if result is None:
+        status_badge(SIMULATION_LABEL, "warn")
     st.subheader("Approval and execution")
     st.caption(f"Simulated actors — requester: {OPERATOR}; approver: {APPROVER}. Approval and execution stay separate.")
     owner = None
     try:
-        if finding["resolved"]:
-            st.success(f"Resolved in simulation by {action['id']}. No cloud changes were performed.")
+        if result:
+            done = result["action"]
+            success_card(result["mode_badge"], result["heading"], result["description"],
+                         [(check["label"], check["ok"]) for check in result["checks"]],
+                         [("Remediation ID", html.escape(done["id"])), ("Requested by", html.escape(done["requested_by"])),
+                          ("Approved by", html.escape(done["approver"] or "—")),
+                          ("Executed at", html.escape(str(done["executed_at"] or "—"))),
+                          ("Audit trail", "Available under Audit &amp; Governance")])
+        elif finding["resolved"]:
+            st.success("Resolved in simulation. No cloud changes were performed.")
         elif action is None or action["status"] == "rejected":
             if action:
                 st.warning(f"Previous request {action['id']} was rejected. {action.get('note') or ''}")
@@ -651,8 +661,6 @@ def _approval_screen(ws, finding_id):
                 st.rerun()
     except WorkflowError as error:
         st.error(str(error))
-    if finding["resolved"] or (action and action["status"] == "completed"):
-        status_badge(SIMULATION_LABEL, "warn")
     _action_bar(finding, "approval")
 
 

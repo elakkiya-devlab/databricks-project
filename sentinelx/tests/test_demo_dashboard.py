@@ -99,8 +99,11 @@ class DemoDashboardTests(unittest.TestCase):
         self.ui.checkbox(key="ac-confirm").check().run()
         self.button("ac-execute").click().run()
         self.assertFalse(self.ui.exception)
-        self.assertIn(SIMULATION_LABEL, texts(self.ui))
-        self.assertNotIn("successfully renewed", texts(self.ui).lower())
+        self.assertIn("REMEDIATION COMPLETED SUCCESSFULLY", texts(self.ui))
+        self.assertIn("DEMO MODE", texts(self.ui))
+        self.assertIn("Databricks credential update simulated successfully", texts(self.ui))
+        self.assertNotIn(SIMULATION_LABEL, texts(self.ui))
+        self.assertNotIn("REMEDIATION SUCCESSFUL — CHANGES UPDATED AND VERIFIED", texts(self.ui))
         self.button("approval-View Audit History").click().run()
         self.assertTrue(any("execution_simulated" in str(frame.value.to_dict()) for frame in self.ui.dataframe))
 
